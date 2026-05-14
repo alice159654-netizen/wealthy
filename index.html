@@ -469,8 +469,19 @@
 
     <script>
         // --- Constants & Configurations ---
-        const CATEGORIES_EXPENSE = ["食物", "存款", "寵物", "行車", "家庭", "育樂", "舊代墊費", "台新信存", "王道信存", "國泰保險", "zingala", "Aftee", "股票投資", "其他"];
-        const CATEGORIES_INCOME = ["薪資", "獎金", "股票收益", "投資獲利", "舊代墊還款", "其他"];
+        // 先定義帳戶，才能將它們加入到類別中
+        const BANK_ACCOUNTS = ["玉山新帳戶", "玉山原帳戶", "樂天銀行", "富邦銀行", "上海銀行", "彰化銀行", "台新銀行", "New New bank", "將來銀行", "王道銀行", "國泰銀行", "其他備註"];
+        const STOCK_ACCOUNTS = ["證券交割戶", "目前股票市值"];
+        const CREDIT_ACCOUNTS = ["台新信存", "王道信存", "國泰保險", "zingala", "Aftee"]; // 獨立計算，不計入總資產
+        
+        const PAYMENTS = ["現金", "玉山卡", "富邦卡", "上海卡", "樂天卡", ...BANK_ACCOUNTS, "證券交割戶", "其他"];
+        const ALL_ACCOUNTS = [...BANK_ACCOUNTS, ...STOCK_ACCOUNTS, ...CREDIT_ACCOUNTS];
+        const AUTO_DEDUCT_ACCOUNTS = CREDIT_ACCOUNTS; // 這五個會自動扣款
+
+        // 將所有銀行帳戶直接加入記帳「類別」中
+        const CATEGORIES_EXPENSE = ["食物", "存款", "寵物", "行車", "家庭", "育樂", "舊代墊費", "台新信存", "王道信存", "國泰保險", "zingala", "Aftee", "股票投資", ...BANK_ACCOUNTS, "其他"];
+        const CATEGORIES_INCOME = ["薪資", "獎金", "股票收益", "投資獲利", "舊代墊還款", ...BANK_ACCOUNTS, "其他"];
+        
         const CATEGORY_ICONS = { 
             "食物": "🍎", "存款": "💰", "寵物": "🐾", "行車": "🚗", "家庭": "🏠", 
             "育樂": "🎮", "舊代墊費": "💸", "台新信存": "🏦", "王道信存": "🏛️", "國泰保險": "🛡️",
@@ -478,6 +489,9 @@
             "股票投資": "📊", "股票收益": "📈",
             "薪資": "💼", "獎金": "🎊", "投資獲利": "✨", "舊代墊還款": "🤝", "其他": "✨" 
         };
+        // 自動為所有銀行加上可愛的小銀行圖示
+        BANK_ACCOUNTS.forEach(acc => CATEGORY_ICONS[acc] = "🏦");
+
         const CATEGORY_COLORS = { 
             "食物": "#ffafbd", "存款": "#a1c4fd", "寵物": "#f9d423", "行車": "#84fab0", 
             "家庭": "#c2e9fb", "育樂": "#d4fc79", "舊代墊費": "#fca5a5", 
@@ -486,15 +500,8 @@
             "股票投資": "#60a5fa", "股票收益": "#34d399",
             "其他": "#e5e7eb" 
         };
-        const PAYMENTS = ["現金", "轉帳", "玉山卡", "富邦卡", "上海卡", "樂天卡", "證券交割戶", "其他"];
-        
-        // 帳戶分群設定
-        const BANK_ACCOUNTS = ["玉山新帳戶", "玉山原帳戶", "樂天銀行", "富邦銀行", "上海銀行", "彰化銀行", "台新銀行", "New New bank", "將來銀行", "王道銀行", "國泰銀行", "其他備註"];
-        const STOCK_ACCOUNTS = ["證券交割戶", "目前股票市值"];
-        const CREDIT_ACCOUNTS = ["台新信存", "王道信存", "國泰保險", "zingala", "Aftee"]; // 獨立計算，不計入總資產
-        
-        const ALL_ACCOUNTS = [...BANK_ACCOUNTS, ...STOCK_ACCOUNTS, ...CREDIT_ACCOUNTS];
-        const AUTO_DEDUCT_ACCOUNTS = CREDIT_ACCOUNTS; // 這五個會自動扣款
+        // 自動為所有銀行加上水藍色底色
+        BANK_ACCOUNTS.forEach(acc => CATEGORY_COLORS[acc] = "#93c5fd");
         
         const DEFAULT_BUDGETS = { "食物": 3500, "存款": 15000, "寵物": 5000, "行車": 1400, "家庭": 5000, "育樂": 2600, "舊代墊費": 0, "其他": 0 };
         const DEFAULT_FIXED = { "台新": 8045, "王道": 2874 };
@@ -585,16 +592,22 @@
         }
 
         function showToast(message) {
+            // 自動計算現在有幾個 Toast，讓新出現的 Toast 往上疊加，避免重疊
+            const existingToasts = document.querySelectorAll('.toast-enter').length;
+            const bottomPos = 1.5 + (existingToasts * 3.5); // 1.5rem = bottom-6
+
             const toast = document.createElement('div');
-            toast.className = 'fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-800/90 backdrop-blur text-white px-6 py-3 rounded-full shadow-2xl z-[100] flex items-center gap-2 text-sm font-bold toast-enter border border-gray-700';
+            toast.className = 'fixed left-1/2 transform -translate-x-1/2 bg-gray-800/90 backdrop-blur text-white px-6 py-3 rounded-full shadow-2xl z-[100] flex items-center gap-2 text-sm font-bold toast-enter border border-gray-700';
+            toast.style.bottom = `${bottomPos}rem`;
             toast.innerHTML = `<i data-lucide="check-circle" class="w-4 h-4 text-green-400"></i> ${message}`;
             document.body.appendChild(toast);
             lucide.createIcons();
+            
             setTimeout(() => {
                 toast.style.opacity = '0';
                 toast.style.transition = 'opacity 0.3s ease';
                 setTimeout(() => toast.remove(), 300);
-            }, 2000);
+            }, 2500);
         }
 
         function renderDateSelectors() {
@@ -774,11 +787,26 @@
                 date: date, type: appState.txType, category: category, payment: payment, amount: parseFloat(amountStr), note: note
             };
 
-            // 自動扣款邏輯：信存與保險
+            // 自動扣款邏輯 1：信存與保險 (債務減少)
             if (newTx.type === 'expense' && AUTO_DEDUCT_ACCOUNTS.includes(newTx.category)) {
                 if (data.accounts[newTx.category]) {
                     data.accounts[newTx.category].amount -= newTx.amount;
-                    setTimeout(() => showToast(`✨ 已從 [${newTx.category}] 帳戶自動扣除 $${newTx.amount}`), 500);
+                    setTimeout(() => showToast(`✨ 已從 [${newTx.category}] 信存帳戶扣除 $${newTx.amount}`), 100);
+                }
+            }
+
+            // 自動扣款邏輯 2：銀行帳戶餘額連動 (存款增減 - 支援從類別或支付方式扣款)
+            let targetBank = null;
+            if (BANK_ACCOUNTS.includes(newTx.payment)) targetBank = newTx.payment;
+            else if (BANK_ACCOUNTS.includes(newTx.category)) targetBank = newTx.category;
+
+            if (targetBank && data.accounts[targetBank]) {
+                if (newTx.type === 'expense') {
+                    data.accounts[targetBank].amount -= newTx.amount;
+                    setTimeout(() => showToast(`🏦 已從 [${targetBank}] 扣除 $${newTx.amount}`), 300);
+                } else if (newTx.type === 'income') {
+                    data.accounts[targetBank].amount += newTx.amount;
+                    setTimeout(() => showToast(`🏦 已將 $${newTx.amount} 存入 [${targetBank}]`), 300);
                 }
             }
 
@@ -916,11 +944,28 @@
             const data = getMonthData(appState.currentYear, appState.currentMonth);
             
             const tx = data.transactions.find(t => t.id === id);
-            // 刪除時回補邏輯
+            // 刪除時回補邏輯 1：信存與保險
             if (tx && tx.type === 'expense' && AUTO_DEDUCT_ACCOUNTS.includes(tx.category)) {
                 if (data.accounts[tx.category]) {
                     data.accounts[tx.category].amount += tx.amount;
-                    setTimeout(() => showToast(`✨ 已將 $${tx.amount} 回補至 [${tx.category}] 帳戶`), 500);
+                    setTimeout(() => showToast(`✨ 已將 $${tx.amount} 回補至 [${tx.category}] 信存`), 100);
+                }
+            }
+
+            // 刪除時回補邏輯 2：銀行帳戶 (存款 - 支援從類別或支付方式回補)
+            if (tx) {
+                let targetBank = null;
+                if (BANK_ACCOUNTS.includes(tx.payment)) targetBank = tx.payment;
+                else if (BANK_ACCOUNTS.includes(tx.category)) targetBank = tx.category;
+
+                if (targetBank && data.accounts[targetBank]) {
+                    if (tx.type === 'expense') {
+                        data.accounts[targetBank].amount += tx.amount;
+                        setTimeout(() => showToast(`🏦 已將 $${tx.amount} 回補至 [${targetBank}]`), 300);
+                    } else if (tx.type === 'income') {
+                        data.accounts[targetBank].amount -= tx.amount;
+                        setTimeout(() => showToast(`🏦 已從 [${targetBank}] 扣除收回的 $${tx.amount}`), 300);
+                    }
                 }
             }
 
