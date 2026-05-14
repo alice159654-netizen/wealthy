@@ -94,7 +94,12 @@
             <div class="inline-block p-4 bg-white rounded-full shadow-lg mb-4 animate-float border-2 border-pink-50">
                 <i data-lucide="sparkles" class="text-pink-400 w-10 h-10"></i>
             </div>
-            <h1 class="text-3xl font-black text-pink-500 tracking-tight">Alice' 財富宇宙</h1>
+            <h1 class="text-3xl font-black text-pink-500 tracking-tight flex justify-center items-center gap-2">
+                Alice' 財富宇宙
+                <span id="cloud-status" class="flex items-center" title="雲端同步狀態">
+                    <i data-lucide="cloud" class="text-gray-300 w-6 h-6"></i>
+                </span>
+            </h1>
             
             <div class="mt-4 flex justify-center items-center gap-4 bg-white/80 backdrop-blur-md inline-flex px-6 py-2 rounded-full border border-pink-100 shadow-sm">
                 <button onclick="changeMonth(-1)" class="text-pink-400 hover:scale-110 transition-transform"><i data-lucide="chevron-left"></i></button>
@@ -568,6 +573,20 @@
                     <!-- Achievement Cards injected via JS -->
                 </div>
             </div>
+
+            <!-- 這裡新增備份與還原區塊 -->
+            <div class="cute-card p-6 bg-gray-50 border-2 border-gray-200 mt-6">
+                <div class="flex justify-between items-start mb-4">
+                    <h3 class="font-bold flex items-center gap-2 text-gray-700"><i data-lucide="hard-drive" class="text-gray-500"></i> 資料備份與跨裝置轉移</h3>
+                    <span class="text-[10px] bg-gray-200 text-gray-600 px-2 py-1 rounded-md font-bold">Local Storage</span>
+                </div>
+                <p class="text-xs text-gray-500 mb-4 leading-relaxed">因為您的資料是安全地儲存在當前裝置的瀏覽器中，如果要在手機上看到電腦的紀錄：<br>1. 先在電腦點擊「匯出備份」<br>2. 將檔案傳送到手機<br>3. 用手機開啟網頁點選「匯入資料」</p>
+                <div class="flex gap-4">
+                    <button onclick="exportBackup()" class="flex-1 bg-white border-2 border-gray-200 py-3 rounded-xl font-bold text-gray-600 hover:bg-gray-100 flex justify-center items-center gap-2 transition-colors shadow-sm"><i data-lucide="download-cloud" class="w-5 h-5"></i> 匯出備份檔</button>
+                    <button onclick="document.getElementById('import-file').click()" class="flex-1 bg-white border-2 border-gray-200 py-3 rounded-xl font-bold text-gray-600 hover:bg-gray-100 flex justify-center items-center gap-2 transition-colors shadow-sm"><i data-lucide="upload-cloud" class="w-5 h-5"></i> 匯入資料</button>
+                    <input type="file" id="import-file" class="hidden" accept=".json" onchange="importBackup(event)">
+                </div>
+            </div>
         </section>
 
         <footer class="mt-12 text-center text-xs text-gray-400 pb-12 font-bold flex flex-col items-center gap-2">
@@ -576,7 +595,18 @@
         </footer>
     </div>
 
-    <script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Firebase Configuration ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'alice-financial-app';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        let db = null;
+        let auth = null;
+        let userId = null;
+
         // --- Constants & Configurations ---
         const BANK_ACCOUNTS = ["玉山新帳戶", "玉山原帳戶", "樂天銀行", "富邦銀行", "上海銀行", "彰化銀行", "台新銀行", "New New bank", "將來銀行", "王道銀行", "國泰銀行", "其他備註"];
         const STOCK_ACCOUNTS = ["證券交割戶", "目前股票市值"];
@@ -622,8 +652,29 @@
         };
         let charts = {};
 
-        function initApp() {
-            loadData();
+        // --- Module Exports for HTML inline handlers ---
+        window.changeMonth = changeMonth;
+        window.onDateChange = onDateChange;
+        window.switchTab = switchTab;
+        window.savePlanning = savePlanning;
+        window.setTxType = setTxType;
+        window.toggleOtherInput = toggleOtherInput;
+        window.toggleTuitionOther = toggleTuitionOther;
+        window.saveTuitionSettings = saveTuitionSettings;
+        window.addTuitionExpense = addTuitionExpense;
+        window.deleteTuitionExpense = deleteTuitionExpense;
+        window.addTransaction = addTransaction;
+        window.deleteTransaction = deleteTransaction;
+        window.addCollection = addCollection;
+        window.toggleCollection = toggleCollection;
+        window.deleteCollection = deleteCollection;
+        window.saveAccounts = saveAccounts;
+        window.exportCSV = exportCSV;
+        window.exportBackup = exportBackup;
+        window.importBackup = importBackup;
+
+        function initApp(loadFromLocal = true) {
+            if (loadFromLocal) loadLocalData();
             renderDateSelectors();
             lucide.createIcons();
             document.getElementById('input-date').valueAsDate = new Date();
@@ -634,7 +685,7 @@
             onDateChange(false);
         }
 
-        function loadData() {
+        function loadLocalData() {
             const saved = localStorage.getItem('alice_financial_data');
             if (saved) {
                 try {
@@ -649,15 +700,57 @@
             }
         }
 
+        async function loadCloudData() {
+            try {
+                const docRef = doc(db, 'artifacts', appId, 'users', userId, 'financials', 'state');
+                const snap = await getDoc(docRef);
+                if (snap.exists()) {
+                    const parsed = snap.data();
+                    appState.data = parsed.data || {};
+                    appState.collections = parsed.collections || [];
+                    appState.tuitionGlob = parsed.tuitionGlob || { estTotal: 0, estLoan: 0, expenses: [] };
+                } else {
+                    // 如果雲端沒資料，檢查本地是否有舊資料，進行無縫遷移
+                    const saved = localStorage.getItem('alice_financial_data');
+                    if (saved) {
+                        showToast("發現本機紀錄，正在安全搬移至雲端... 🚀");
+                        const parsed = JSON.parse(saved);
+                        appState.data = parsed.data || {};
+                        appState.collections = parsed.collections || [];
+                        appState.tuitionGlob = parsed.tuitionGlob || { estTotal: 0, estLoan: 0, expenses: [] };
+                        await saveData(false); // 觸發第一次雲端儲存
+                    }
+                }
+            } catch (error) {
+                console.error("載入雲端資料失敗", error);
+                throw error;
+            }
+        }
+
         function saveData(showToastMsg = false) {
-            localStorage.setItem('alice_financial_data', JSON.stringify({
+            const saveObj = {
                 data: appState.data,
                 collections: appState.collections,
                 tuitionGlob: appState.tuitionGlob,
                 lastYear: appState.currentYear,
                 lastMonth: appState.currentMonth
-            }));
-            if (showToastMsg) showToast("已成功儲存！ 💖");
+            };
+
+            // 1. 雙重保障：先存本機
+            localStorage.setItem('alice_financial_data', JSON.stringify(saveObj));
+
+            // 2. 自動同步至雲端
+            if (userId && db) {
+                const docRef = doc(db, 'artifacts', appId, 'users', userId, 'financials', 'state');
+                setDoc(docRef, saveObj).then(() => {
+                    if (showToastMsg) showToast("已自動同步至雲端！ ☁️💖");
+                }).catch(err => {
+                    console.error("Cloud save failed:", err);
+                    if (showToastMsg) showToast("已儲存於本機 (雲端連線失敗) 📱");
+                });
+            } else {
+                if (showToastMsg) showToast("已成功儲存於本機！ 💖");
+            }
         }
 
         function getMonthData(year, month) {
@@ -1317,6 +1410,48 @@
             showToast("成功下載 CSV 報表！ 📊");
         }
 
+        // 新增：匯出 JSON 備份檔功能
+        function exportBackup() {
+            const data = localStorage.getItem('alice_financial_data');
+            if (!data || data === '{}') { showToast("目前還沒有資料可以備份喔！"); return; }
+            
+            const blob = new Blob([data], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Alice_Wealth_Backup_${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a); 
+            a.click(); 
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast("備份檔已下載！請傳送到手機上匯入 ✨");
+        }
+
+        // 新增：匯入 JSON 備份檔功能
+        function importBackup(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const importedData = JSON.parse(e.target.result);
+                    // 簡單驗證資料結構
+                    if (importedData && importedData.data) {
+                        localStorage.setItem('alice_financial_data', JSON.stringify(importedData));
+                        showToast("🎉 資料匯入成功！正在重新載入宇宙...");
+                        setTimeout(() => location.reload(), 1500);
+                    } else {
+                        alert("檔案格式不太對喔，請確認是之前下載的 Backup 檔案！");
+                    }
+                } catch (error) {
+                    alert("讀取備份檔失敗，請確認檔案是否損毀。");
+                }
+            };
+            reader.readAsText(file);
+            event.target.value = ''; // 清空選擇，允許重複選取同一個檔案
+        }
+
         function generateAccountInputHTML(acc, accData, styleType) {
             let cardClass, labelClass, iconColorClass, currencyClass, inputAmtClass, inputNoteClass;
 
@@ -1663,7 +1798,47 @@
             lucide.createIcons();
         }
 
-        window.onload = function() { initApp(); };
+        window.onload = async function() { 
+            if (!firebaseConfig) {
+                initApp(true);
+                return;
+            }
+
+            try {
+                // 啟動雲端連線
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                if (typeof __initial_auth_token !== 'undefined') {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                userId = auth.currentUser?.uid;
+                if (!userId) throw new Error("無效的帳號狀態");
+
+                // 更新雲端圖示為成功連線 (綠色閃電雲)
+                const cloudIcon = document.getElementById('cloud-status');
+                if (cloudIcon) {
+                    cloudIcon.innerHTML = '<i data-lucide="cloud-lightning" class="text-emerald-400 w-6 h-6 animate-pulse"></i>';
+                    lucide.createIcons();
+                }
+
+                await loadCloudData();
+                initApp(false); // 從雲端讀取完畢，不需再讀取本機
+            } catch (error) {
+                console.error("雲端連線失敗:", error);
+                const cloudIcon = document.getElementById('cloud-status');
+                if (cloudIcon) {
+                    cloudIcon.innerHTML = '<i data-lucide="cloud-off" class="text-rose-400 w-6 h-6"></i>';
+                    lucide.createIcons();
+                }
+                showToast("雲端連線異常，啟動單機模式 📱");
+                initApp(true); // 退回本機模式
+            }
+        };
     </script>
 </body>
 </html>
