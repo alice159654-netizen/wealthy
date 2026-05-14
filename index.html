@@ -469,11 +469,12 @@
 
     <script>
         // --- Constants & Configurations ---
-        const CATEGORIES_EXPENSE = ["食物", "存款", "寵物", "行車", "家庭", "育樂", "舊代墊費", "台新信存", "王道信存", "國泰保險", "股票投資", "其他"];
+        const CATEGORIES_EXPENSE = ["食物", "存款", "寵物", "行車", "家庭", "育樂", "舊代墊費", "台新信存", "王道信存", "國泰保險", "zingala", "Aftee", "股票投資", "其他"];
         const CATEGORIES_INCOME = ["薪資", "獎金", "股票收益", "投資獲利", "舊代墊還款", "其他"];
         const CATEGORY_ICONS = { 
             "食物": "🍎", "存款": "💰", "寵物": "🐾", "行車": "🚗", "家庭": "🏠", 
             "育樂": "🎮", "舊代墊費": "💸", "台新信存": "🏦", "王道信存": "🏛️", "國泰保險": "🛡️",
+            "zingala": "💳", "Aftee": "📱",
             "股票投資": "📊", "股票收益": "📈",
             "薪資": "💼", "獎金": "🎊", "投資獲利": "✨", "舊代墊還款": "🤝", "其他": "✨" 
         };
@@ -481,6 +482,7 @@
             "食物": "#ffafbd", "存款": "#a1c4fd", "寵物": "#f9d423", "行車": "#84fab0", 
             "家庭": "#c2e9fb", "育樂": "#d4fc79", "舊代墊費": "#fca5a5", 
             "台新信存": "#f87171", "王道信存": "#fbbf24", "國泰保險": "#34d399",
+            "zingala": "#f472b6", "Aftee": "#60a5fa",
             "股票投資": "#60a5fa", "股票收益": "#34d399",
             "其他": "#e5e7eb" 
         };
@@ -489,12 +491,12 @@
         // 帳戶分群設定
         const BANK_ACCOUNTS = ["玉山新帳戶", "玉山原帳戶", "樂天銀行", "富邦銀行", "上海銀行", "彰化銀行", "台新銀行", "New New bank", "將來銀行", "王道銀行", "國泰銀行", "其他備註"];
         const STOCK_ACCOUNTS = ["證券交割戶", "目前股票市值"];
-        const CREDIT_ACCOUNTS = ["台新信存", "王道信存", "國泰保險"]; // 獨立計算，不計入總資產
+        const CREDIT_ACCOUNTS = ["台新信存", "王道信存", "國泰保險", "zingala", "Aftee"]; // 獨立計算，不計入總資產
         
         const ALL_ACCOUNTS = [...BANK_ACCOUNTS, ...STOCK_ACCOUNTS, ...CREDIT_ACCOUNTS];
-        const AUTO_DEDUCT_ACCOUNTS = CREDIT_ACCOUNTS; // 這三個會自動扣款
+        const AUTO_DEDUCT_ACCOUNTS = CREDIT_ACCOUNTS; // 這五個會自動扣款
         
-        const DEFAULT_BUDGETS = { "食物": 3500, "存款": 15000, "寵物": 5000, "行車": 1400, "家庭": 5000, "育樂": 2600, "舊代墊費": 0 };
+        const DEFAULT_BUDGETS = { "食物": 3500, "存款": 15000, "寵物": 5000, "行車": 1400, "家庭": 5000, "育樂": 2600, "舊代墊費": 0, "其他": 0 };
         const DEFAULT_FIXED = { "台新": 8045, "王道": 2874 };
 
         // --- State Management ---
@@ -663,15 +665,29 @@
 
             const container = document.getElementById('budget-inputs-container');
             container.innerHTML = '';
+            
+            // 確保舊資料也有「其他」預算選項
+            if (plan.budgets["其他"] === undefined) plan.budgets["其他"] = 0;
+
             Object.keys(plan.budgets).forEach(cat => {
                 const icon = CATEGORY_ICONS[cat] || "✨";
+                let extraHtml = '';
+                
+                // 專為「其他」預算加入的自定義內容輸入框
+                if (cat === '其他') {
+                    extraHtml = `<input type="text" id="plan-other-note" value="${plan.otherBudgetNote || ''}" class="w-full mt-2 text-xs bg-gray-50 border border-pink-100 rounded-lg px-3 py-2 outline-none focus:border-pink-300 focus:bg-white transition-colors" placeholder="自訂這個月的其他預算內容 (例如: 保養品、聚餐...)" onchange="savePlanning()">`;
+                }
+
                 container.innerHTML += `
-                    <div class="flex items-center gap-3 bg-white p-3 rounded-2xl border border-pink-50 shadow-sm">
-                        <div class="w-10 h-10 bg-pink-50 rounded-xl flex items-center justify-center text-lg shrink-0">${icon}</div>
-                        <div class="flex-1">
-                            <label class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">${cat}</label>
-                            <input type="number" id="budget-${cat}" value="${plan.budgets[cat]}" class="w-full font-bold text-gray-700 outline-none text-lg bg-transparent" placeholder="0">
+                    <div class="flex flex-col bg-white p-3 rounded-2xl border border-pink-50 shadow-sm">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 bg-pink-50 rounded-xl flex items-center justify-center text-lg shrink-0">${icon}</div>
+                            <div class="flex-1">
+                                <label class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">${cat}</label>
+                                <input type="number" id="budget-${cat}" value="${plan.budgets[cat]}" class="w-full font-bold text-gray-700 outline-none text-lg bg-transparent" placeholder="0">
+                            </div>
                         </div>
+                        ${extraHtml}
                     </div>
                 `;
             });
@@ -684,6 +700,10 @@
             data.planning.incomeNote = document.getElementById('plan-income-note').value;
             data.planning.fixed["台新"] = parseInt(document.getElementById('plan-fixed-taishin').value) || 0;
             data.planning.fixed["王道"] = parseInt(document.getElementById('plan-fixed-obank').value) || 0;
+
+            // 儲存「其他」預算的自定義內容
+            const otherNoteEl = document.getElementById('plan-other-note');
+            if (otherNoteEl) data.planning.otherBudgetNote = otherNoteEl.value;
 
             Object.keys(data.planning.budgets).forEach(cat => {
                 const el = document.getElementById(`budget-${cat}`);
@@ -1174,10 +1194,16 @@
                 if (percent >= 100 || spent > limit) { colorClass = 'bg-rose-500'; overCount++; } 
                 else { healthyCount++; }
 
+                // 讓「總覽」的進度條也能顯示妳自訂的其他內容
+                let displayLabel = `${CATEGORY_ICONS[cat]||''} ${cat}`;
+                if (cat === '其他' && data.planning.otherBudgetNote) {
+                    displayLabel += ` <span class="text-gray-400 font-normal ml-1">(${data.planning.otherBudgetNote})</span>`;
+                }
+
                 container.innerHTML += `
                     <div>
                         <div class="flex justify-between text-xs mb-1 font-bold text-gray-600">
-                            <span>${CATEGORY_ICONS[cat]||''} ${cat}</span>
+                            <span>${displayLabel}</span>
                             <span>$${spent.toLocaleString()} / $${limit.toLocaleString()}</span>
                         </div>
                         <div class="bg-gray-100 rounded-full h-2 overflow-hidden">
